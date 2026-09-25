@@ -48,7 +48,12 @@ class NodeVyuNvrCamera(CoordinatorEntity[NodeVyuCoordinator], Camera):
 
     @property
     def device_info(self) -> DeviceInfo:
-        return DeviceInfo(identifiers={(DOMAIN, f"nvr_stream:{self.camera_id}")}, name=self.camera_name, manufacturer="NodeVyu", model="NVR Camera", via_device=(DOMAIN, self.nvr_id))
+        return DeviceInfo(
+            identifiers={(DOMAIN, f"nvr_stream:{self.camera_id}")},
+            name=self.camera_name,
+            manufacturer="NodeVyu",
+            model="NVR Camera",
+        )
 
     @property
     def available(self) -> bool:
