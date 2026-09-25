@@ -1,7 +1,9 @@
 """Camera entities for NodeVyu NVR streams."""
 from __future__ import annotations
 
-from homeassistant.components.camera import Camera
+import secrets
+
+from homeassistant.components.camera import Camera, CameraEntityFeature
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
@@ -17,21 +19,31 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     data = coordinator.data or {}
     location = data.get("location") or {}
     location_id = str(location.get("id") or entry.unique_id)
-    async_add_entities(NodeVyuNvrCamera(coordinator, location_id, camera) for camera in data.get("cameras") or [])
+    keys = hass.data[DOMAIN].setdefault("live_keys", {})
+    entities = []
+    for camera in data.get("cameras") or []:
+        camera_id = str(camera["id"])
+        key = secrets.token_urlsafe(32)
+        keys[(entry.entry_id, camera_id)] = key
+        entities.append(NodeVyuNvrCamera(coordinator, location_id, camera, entry.entry_id, key))
+    async_add_entities(entities)
 
 
 class NodeVyuNvrCamera(CoordinatorEntity[NodeVyuCoordinator], Camera):
     """A camera channel exposed by a NodeVyu-managed NVR."""
     _attr_has_entity_name = True
     _attr_name = None
+    _attr_supported_features = CameraEntityFeature.STREAM
 
-    def __init__(self, coordinator: NodeVyuCoordinator, location_id: str, camera: dict) -> None:
+    def __init__(self, coordinator: NodeVyuCoordinator, location_id: str, camera: dict, entry_id: str, live_key: str) -> None:
         CoordinatorEntity.__init__(self, coordinator)
         Camera.__init__(self)
         self.location_id = location_id
         self.camera_id = str(camera["id"])
         self.nvr_id = str(camera["nvr_id"])
         self.camera_name = str(camera.get("name") or "Camera")
+        self.entry_id = entry_id
+        self.live_key = live_key
         self._attr_unique_id = f"nvr_stream_{self.camera_id}"
 
     @property
@@ -51,3 +63,7 @@ class NodeVyuNvrCamera(CoordinatorEntity[NodeVyuCoordinator], Camera):
 
     async def async_camera_image(self, width: int | None = None, height: int | None = None) -> bytes | None:
         return await self.coordinator.api.async_camera_image(self.camera_id)
+
+    async def stream_source(self) -> str | None:
+        """Return the local fMP4 bridge URL consumed by Home Assistant/FFmpeg."""
+        return f"http://127.0.0.1:8123/api/nodevyu/live/{self.entry_id}/{self.camera_id}/{self.live_key}"
