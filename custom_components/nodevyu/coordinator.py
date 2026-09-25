@@ -34,8 +34,17 @@ class NodeVyuCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             raise UpdateFailed(str(err)) from err
 
     def start_stream(self) -> None:
+        """Start the long-lived event listener as a background task.
+
+        Do not use hass.async_create_task here. Tasks created that way during
+        integration setup are tracked by Home Assistant's startup machinery,
+        so a deliberately long-lived SSE listener can keep HA in the startup
+        phase until its timeout expires.
+        """
         if self._stream_task is None or self._stream_task.done():
-            self._stream_task = self.hass.async_create_task(self._stream_loop())
+            self._stream_task = asyncio.create_task(
+                self._stream_loop(), name="nodevyu_event_stream"
+            )
 
     async def async_stop_stream(self) -> None:
         if self._stream_task is not None:
@@ -47,18 +56,26 @@ class NodeVyuCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self._stream_task = None
 
     async def _stream_loop(self) -> None:
-        while True:
-            try:
-                async for message in self.api.async_events(self.last_event_id):
-                    if message.get("id"):
-                        self.last_event_id = int(message["id"])
-                    event = str(message.get("event") or "")
-                    payload = message.get("data") or {}
-                    if event not in ("ready", "message", "error"):
-                        self.hass.bus.async_fire("nodevyu_event", {"type": event, **payload})
-                        await self.async_request_refresh()
-            except asyncio.CancelledError:
-                raise
-            except Exception as err:  # reconnect loop must survive transient failures
-                _LOGGER.warning("NodeVyu event stream disconnected: %s", err)
-            await asyncio.sleep(5)
+        try:
+            while True:
+                try:
+                    async for message in self.api.async_events(self.last_event_id):
+                        if message.get("id"):
+                            self.last_event_id = int(message["id"])
+                        event = str(message.get("event") or "")
+                        payload = message.get("data") or {}
+                        if event not in ("ready", "message", "error"):
+                            self.hass.bus.async_fire(
+                                "nodevyu_event", {"type": event, **payload}
+                            )
+                            # Schedule a refresh without making the persistent
+                            # SSE reader wait for the HTTP status request.
+                            self.async_request_refresh()
+                except asyncio.CancelledError:
+                    raise
+                except Exception as err:  # reconnect after transient failures
+                    _LOGGER.warning("NodeVyu event stream disconnected: %s", err)
+                await asyncio.sleep(5)
+        except asyncio.CancelledError:
+            _LOGGER.debug("NodeVyu event stream stopped")
+            raise
