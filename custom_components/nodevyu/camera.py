@@ -20,6 +20,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     location = data.get("location") or {}
     location_id = str(location.get("id") or entry.unique_id)
     keys = hass.data[DOMAIN].setdefault("live_keys", {})
+    hass.data[DOMAIN].setdefault("live_status", {})
     entities = []
     for camera in data.get("cameras") or []:
         camera_id = str(camera["id"])
@@ -61,14 +62,25 @@ class NodeVyuNvrCamera(CoordinatorEntity[NodeVyuCoordinator], Camera):
 
     @property
     def extra_state_attributes(self) -> dict:
+        attributes = {}
         for camera in (self.coordinator.data or {}).get("cameras") or []:
             if str(camera.get("id")) == self.camera_id:
-                return {"nvr_id": camera.get("nvr_id"), "channel": camera.get("channel"), "camera_identity_id": camera.get("identity_id")}
-        return {}
+                attributes = {"nvr_id": camera.get("nvr_id"), "channel": camera.get("channel"), "camera_identity_id": camera.get("identity_id")}
+                break
+        status = self.hass.data.get(DOMAIN, {}).get("live_status", {}).get((self.entry_id, self.camera_id), "idle")
+        attributes["stream_status"] = status
+        if status in ("starting", "waiting_for_video"):
+            attributes["stream_message"] = "Starting NodeVyu live stream... Please wait."
+        elif status == "live":
+            attributes["stream_message"] = "Live"
+        return attributes
 
     async def async_camera_image(self, width: int | None = None, height: int | None = None) -> bytes | None:
         return await self.coordinator.api.async_camera_image(self.camera_id)
 
     async def stream_source(self) -> str | None:
         """Return the local fMP4 bridge URL consumed by Home Assistant/FFmpeg."""
+        statuses = self.hass.data[DOMAIN].setdefault("live_status", {})
+        statuses[(self.entry_id, self.camera_id)] = "starting"
+        self.async_write_ha_state()
         return f"http://127.0.0.1:8123/api/nodevyu/live/{self.entry_id}/{self.camera_id}/{self.live_key}"
