@@ -1,7 +1,7 @@
 """Local HTTP bridge from NodeVyu fMP4 WebSocket streams to Home Assistant."""
 from __future__ import annotations
 
-from aiohttp import StreamResponse, WSMsgType, web
+from aiohttp import WSMsgType, web
 from homeassistant.components.http import HomeAssistantView
 
 from .const import DOMAIN
@@ -14,7 +14,7 @@ class NodeVyuLiveView(HomeAssistantView):
     name = "api:nodevyu:live"
     requires_auth = False
 
-    async def get(self, request: web.Request, entry_id: str, camera_id: str, key: str) -> StreamResponse:
+    async def get(self, request: web.Request, entry_id: str, camera_id: str, key: str) -> web.StreamResponse:
         hass = request.app["hass"]
         domain_data = hass.data.get(DOMAIN, {})
         keys = domain_data.get("live_keys", {})
