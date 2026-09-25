@@ -22,7 +22,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
 
 class NodeVyuNvrCamera(CoordinatorEntity[NodeVyuCoordinator], Camera):
     """A camera channel exposed by a NodeVyu-managed NVR."""
-
     _attr_has_entity_name = True
     _attr_name = None
 
@@ -37,32 +36,18 @@ class NodeVyuNvrCamera(CoordinatorEntity[NodeVyuCoordinator], Camera):
 
     @property
     def device_info(self) -> DeviceInfo:
-        return DeviceInfo(
-            identifiers={(DOMAIN, f"nvr_stream:{self.camera_id}")},
-            name=self.camera_name,
-            manufacturer="NodeVyu",
-            model="NVR Camera",
-            via_device=(DOMAIN, self.nvr_id),
-        )
+        return DeviceInfo(identifiers={(DOMAIN, f"nvr_stream:{self.camera_id}")}, name=self.camera_name, manufacturer="NodeVyu", model="NVR Camera", via_device=(DOMAIN, self.nvr_id))
 
     @property
     def available(self) -> bool:
-        for camera in (self.coordinator.data or {}).get("cameras") or []:
-            if str(camera.get("id")) == self.camera_id:
-                return bool(camera.get("stream_available")) and self.coordinator.last_update_success
-        return False
+        return self.coordinator.last_update_success and any(str(camera.get("id")) == self.camera_id and bool(camera.get("stream_available")) for camera in (self.coordinator.data or {}).get("cameras") or [])
 
     @property
     def extra_state_attributes(self) -> dict:
         for camera in (self.coordinator.data or {}).get("cameras") or []:
             if str(camera.get("id")) == self.camera_id:
-                return {
-                    "nvr_id": camera.get("nvr_id"),
-                    "channel": camera.get("channel"),
-                    "camera_identity_id": camera.get("identity_id"),
-                }
+                return {"nvr_id": camera.get("nvr_id"), "channel": camera.get("channel"), "camera_identity_id": camera.get("identity_id")}
         return {}
 
     async def async_camera_image(self, width: int | None = None, height: int | None = None) -> bytes | None:
-        """Snapshots will be enabled by the NodeVyu media endpoint in the streaming phase."""
-        return None
+        return await self.coordinator.api.async_camera_image(self.camera_id)
