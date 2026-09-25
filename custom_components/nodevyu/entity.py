@@ -19,9 +19,12 @@ class NodeVyuEntity(CoordinatorEntity[NodeVyuCoordinator]):
 
     @property
     def device_info(self) -> DeviceInfo:
+        # Current Home Assistant versions no longer accept the legacy
+        # via_device tuple here. Keep the NodeVyu device registration stable;
+        # parent/location relationships can be added through the device
+        # registry's current API later without breaking entity setup.
         return DeviceInfo(
             identifiers={(DOMAIN, self.object_id)},
             name=self.object_name,
             manufacturer="NodeVyu",
-            via_device=(DOMAIN, self.location_id) if self.object_id != self.location_id else None,
         )
