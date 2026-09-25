@@ -9,13 +9,6 @@ from homeassistant.components.http import HomeAssistantView
 from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
-
-# The NodeVyu relay prefixes each binary WebSocket frame with a one-byte
-# envelope type. The payload after that byte is the actual ISO-BMFF data:
-#   0 = initialization segment (ftyp/moov)
-#   1 = media fragment (moof/mdat)
-# Browser clients understand this envelope, but FFmpeg expects a continuous
-# fMP4 byte stream and must never see the NodeVyu type byte.
 _INIT = 0
 _MEDIA = 1
 
@@ -37,6 +30,10 @@ class NodeVyuLiveView(HomeAssistantView):
         if coordinator is None:
             raise web.HTTPNotFound()
 
+        statuses = domain_data.setdefault("live_status", {})
+        status_key = (entry_id, camera_id)
+        statuses[status_key] = "starting"
+
         response = web.StreamResponse(
             status=200,
             headers={
@@ -48,8 +45,10 @@ class NodeVyuLiveView(HomeAssistantView):
         await response.prepare(request)
         socket = None
         sent_init = False
+        sent_media = False
         try:
             socket = await coordinator.api.async_open_live_websocket(camera_id)
+            statuses[status_key] = "waiting_for_video"
             async for message in socket:
                 if message.type == WSMsgType.BINARY:
                     frame = bytes(message.data)
@@ -60,30 +59,25 @@ class NodeVyuLiveView(HomeAssistantView):
                     if kind == _INIT:
                         sent_init = True
                         await response.write(payload)
-                    elif kind == _MEDIA:
-                        # A late-joining viewer should receive the cached init
-                        # segment from the relay before any media fragments. If
-                        # it does not, don't feed undecodable fragments to
-                        # FFmpeg; wait for a valid initialization segment.
-                        if sent_init:
-                            await response.write(payload)
+                    elif kind == _MEDIA and sent_init:
+                        await response.write(payload)
+                        if not sent_media:
+                            sent_media = True
+                            statuses[status_key] = "live"
                     else:
-                        _LOGGER.debug(
-                            "Ignoring unknown NodeVyu live frame type %s for camera %s",
-                            kind,
-                            camera_id,
-                        )
+                        if kind not in (_INIT, _MEDIA):
+                            _LOGGER.debug("Ignoring unknown NodeVyu live frame type %s for camera %s", kind, camera_id)
                 elif message.type == WSMsgType.TEXT:
-                    # Relay status/control messages are useful to browser
-                    # clients but are not part of the MP4 byte stream.
                     _LOGGER.debug("NodeVyu live control for %s: %s", camera_id, message.data)
                 elif message.type in (WSMsgType.CLOSE, WSMsgType.CLOSED, WSMsgType.ERROR):
                     break
         except (ConnectionResetError, RuntimeError):
-            pass
+            statuses[status_key] = "unavailable"
         finally:
             if socket is not None and not socket.closed:
                 await socket.close()
+            if statuses.get(status_key) != "unavailable":
+                statuses[status_key] = "idle"
             try:
                 await response.write_eof()
             except (ConnectionResetError, RuntimeError):
