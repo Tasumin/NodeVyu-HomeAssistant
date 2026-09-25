@@ -1,0 +1,22 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to NodeVyu",
+        "description": "Enter your NodeVyu server URL and the Home Assistant token generated for this location.",
+        "data": {
+          "url": "NodeVyu URL",
+          "token": "Integration token"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Unable to connect to NodeVyu.",
+      "invalid_auth": "The NodeVyu integration token is invalid or does not have permission.",
+      "invalid_response": "NodeVyu returned an invalid location response."
+    },
+    "abort": {
+      "already_configured": "This NodeVyu location is already configured."
+    }
+  }
+}
