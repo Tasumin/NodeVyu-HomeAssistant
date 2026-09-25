@@ -1,0 +1,11 @@
+{
+  "domain": "nodevyu",
+  "name": "NodeVyu",
+  "codeowners": ["@Tasumin"],
+  "config_flow": true,
+  "documentation": "https://github.com/Tasumin/NodeVyu-HomeAssistant",
+  "iot_class": "cloud_push",
+  "issue_tracker": "https://github.com/Tasumin/NodeVyu-HomeAssistant/issues",
+  "requirements": [],
+  "version": "0.1.0"
+}
