@@ -41,6 +41,22 @@ class NodeVyuApi:
         except NodeVyuApiError: raise
         except (ClientError, asyncio.TimeoutError) as err: raise NodeVyuApiError(str(err)) from err
 
+    async def async_camera_live(self, camera_id: str, quality: str = "auto") -> dict[str, Any]:
+        """Request a short-lived NodeVyu live-view session for a camera."""
+        try:
+            async with self._session.post(
+                f"{self.base_url}/api/integrations/home-assistant/cameras/{camera_id}/live",
+                headers={**self._headers, "Content-Type": "application/json"},
+                json={"quality": quality},
+                timeout=ClientTimeout(total=20),
+            ) as response:
+                if response.status in (401, 403): raise NodeVyuAuthError("NodeVyu token does not have live-stream permission")
+                payload = await response.json(content_type=None)
+                if response.status >= 400: raise NodeVyuApiError(str(payload.get("error") or f"NodeVyu live stream returned HTTP {response.status}"))
+                return payload
+        except NodeVyuApiError: raise
+        except (ClientError, asyncio.TimeoutError, ValueError) as err: raise NodeVyuApiError(str(err)) from err
+
     async def async_events(self, after: int = 0) -> AsyncIterator[dict[str, Any]]:
         headers = {**self._headers, "Accept": "text/event-stream"}
         if after: headers["Last-Event-ID"] = str(after)
